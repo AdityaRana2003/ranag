@@ -97,17 +97,22 @@ class VoiceAssistantService : Service() {
     }
 
     private fun startAssistant() {
-        startForeground(NOTIFICATION_ID, createNotification())
-        acquireWakeLock()
-        prefs.isServiceRunning = true
-        isAwake = false // Start in wake-word listening mode (like Siri)
+        try {
+            startForeground(NOTIFICATION_ID, createNotification())
+            acquireWakeLock()
+            prefs.isServiceRunning = true
+            isAwake = false // Start in wake-word listening mode (like Siri)
 
-        val greeting = "Hey ${prefs.ownerName}! I'm ${prefs.assistantName}, your personal assistant. I'm always listening now. Just say '${prefs.wakeWord}' anytime, even when your phone is locked!"
-        ttsManager.speak(greeting)
-        conversationCallback?.invoke("🤖 ${prefs.assistantName}: $greeting", false)
+            val greeting = "Hey ${prefs.ownerName}! I'm ${prefs.assistantName}, your personal assistant. I'm always listening now. Just say '${prefs.wakeWord}' anytime, even when your phone is locked!"
+            ttsManager.speak(greeting)
+            conversationCallback?.invoke("🤖 ${prefs.assistantName}: $greeting", false)
 
-        // Start always-on listening immediately
-        speechManager.startListening()
+            // Start always-on listening immediately
+            speechManager.startListening()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting assistant", e)
+            prefs.isServiceRunning = false
+        }
     }
 
     private fun stopAssistant() {
