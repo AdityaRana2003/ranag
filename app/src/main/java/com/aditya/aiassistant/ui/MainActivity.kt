@@ -71,13 +71,7 @@ class MainActivity : AppCompatActivity() {
         prefs = PrefsManager(this)
 
         setupUI()
-        requestPermissions()
-        requestBatteryOptimizationExemption()
-
-        // Auto-start the assistant service (always-on like Siri)
-        if (prefs.autoStart && !isServiceActive) {
-            startAssistant()
-        }
+        checkAndRequestPermissions()
     }
 
     override fun onResume() {
@@ -133,7 +127,23 @@ class MainActivity : AppCompatActivity() {
         updateUIState(false)
     }
 
+    private fun hasRequiredPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun autoStartIfReady() {
+        if (prefs.autoStart && !isServiceActive && hasRequiredPermissions()) {
+            startAssistant()
+        }
+    }
+
     private fun startAssistant() {
+        if (!hasRequiredPermissions()) {
+            Toast.makeText(this, "Please grant microphone permission first!", Toast.LENGTH_LONG).show()
+            checkAndRequestPermissions()
+            return
+        }
+
         val serviceIntent = Intent(this, VoiceAssistantService::class.java).apply {
             action = VoiceAssistantService.ACTION_START
         }
@@ -220,7 +230,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestPermissions() {
+    private fun checkAndRequestPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.READ_PHONE_STATE,
@@ -251,6 +261,10 @@ class MainActivity : AppCompatActivity() {
                 neededPermissions.toTypedArray(),
                 PERMISSION_REQUEST_CODE
             )
+        } else {
+            // All permissions already granted — safe to auto-start
+            requestBatteryOptimizationExemption()
+            autoStartIfReady()
         }
     }
 
@@ -281,6 +295,10 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             }
+
+            // Now that permissions are handled, try to auto-start
+            requestBatteryOptimizationExemption()
+            autoStartIfReady()
         }
     }
 
