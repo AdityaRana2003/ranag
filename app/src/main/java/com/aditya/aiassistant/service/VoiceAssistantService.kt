@@ -3,9 +3,11 @@ package com.aditya.aiassistant.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.aditya.aiassistant.AdityaAIApp
@@ -16,6 +18,7 @@ import com.aditya.aiassistant.manager.PhoneControlManager
 import com.aditya.aiassistant.manager.SpeechRecognitionManager
 import com.aditya.aiassistant.manager.TextToSpeechManager
 import com.aditya.aiassistant.model.Command
+import com.aditya.aiassistant.ui.LockScreenActivity
 import com.aditya.aiassistant.ui.MainActivity
 import com.aditya.aiassistant.util.PrefsManager
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +39,7 @@ class VoiceAssistantService : Service() {
     private lateinit var phoneControl: PhoneControlManager
     private lateinit var aiManager: AIConversationManager
 
+    private var wakeLock: PowerManager.WakeLock? = null
     private var isAwake = false
     private var conversationCallback: ((String, Boolean) -> Unit)? = null
     private var listeningCallback: ((Boolean) -> Unit)? = null
@@ -52,7 +56,7 @@ class VoiceAssistantService : Service() {
 
         ttsManager = TextToSpeechManager(this) {
             // Resume listening after speaking
-            if (prefs.continuousListening) {
+            if (prefs.continuousListening && prefs.isServiceRunning) {
                 speechManager.startListening()
             }
         }
@@ -79,11 +83,13 @@ class VoiceAssistantService : Service() {
             ACTION_STOP -> stopAssistant()
             ACTION_ANNOUNCE_CALL -> {
                 val callerName = intent.getStringExtra(EXTRA_CALLER_NAME) ?: "Someone"
+                wakeUpScreen()
                 announceIncomingCall(callerName)
             }
             ACTION_ANNOUNCE_SMS -> {
                 val sender = intent.getStringExtra(EXTRA_SMS_SENDER) ?: "Someone"
                 val message = intent.getStringExtra(EXTRA_SMS_BODY) ?: ""
+                wakeUpScreen()
                 announceSms(sender, message)
             }
         }
@@ -92,14 +98,15 @@ class VoiceAssistantService : Service() {
 
     private fun startAssistant() {
         startForeground(NOTIFICATION_ID, createNotification())
+        acquireWakeLock()
         prefs.isServiceRunning = true
-        isAwake = true
+        isAwake = false // Start in wake-word listening mode (like Siri)
 
-        val greeting = "Hey ${prefs.ownerName}! I'm ${prefs.assistantName}, your personal assistant. How can I help you?"
+        val greeting = "Hey ${prefs.ownerName}! I'm ${prefs.assistantName}, your personal assistant. I'm always listening now. Just say '${prefs.wakeWord}' anytime, even when your phone is locked!"
         ttsManager.speak(greeting)
         conversationCallback?.invoke("🤖 ${prefs.assistantName}: $greeting", false)
 
-        // Start listening after greeting
+        // Start always-on listening immediately
         speechManager.startListening()
     }
 
@@ -109,20 +116,73 @@ class VoiceAssistantService : Service() {
         conversationCallback?.invoke("🤖 ${prefs.assistantName}: $farewell", false)
 
         speechManager.stopListening()
+        releaseWakeLock()
         prefs.isServiceRunning = false
         isAwake = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
+    private fun acquireWakeLock() {
+        if (wakeLock == null) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "AdityaAI::AlwaysOnWakeLock"
+            ).apply {
+                acquire()
+            }
+            Log.d(TAG, "Wake lock acquired — always-on listening active")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.d(TAG, "Wake lock released")
+            }
+        }
+        wakeLock = null
+    }
+
+    private fun wakeUpScreen() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!powerManager.isInteractive) {
+            val screenWakeLock = powerManager.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK
+                        or PowerManager.ACQUIRE_CAUSES_WAKEUP
+                        or PowerManager.ON_AFTER_RELEASE,
+                "AdityaAI::ScreenWake"
+            )
+            screenWakeLock.acquire(10_000L) // Keep screen on for 10 seconds
+            Log.d(TAG, "Screen woken up")
+        }
+
+        // Launch lock screen overlay activity
+        showLockScreenOverlay()
+    }
+
+    private fun showLockScreenOverlay() {
+        val overlayIntent = Intent(this, LockScreenActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                        or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        }
+        startActivity(overlayIntent)
+    }
+
     private fun handleSpeechResult(text: String) {
         Log.d(TAG, "Speech result: $text")
         val lowerText = text.lowercase()
 
-        // Check for wake word if not already awake
+        // Always listening for wake word — even when phone is locked
         if (!isAwake) {
             if (lowerText.contains(prefs.wakeWord.lowercase())) {
                 isAwake = true
+                wakeUpScreen() // Wake up the screen when wake word is detected
                 val response = "Yes, ${prefs.ownerName}? I'm listening!"
                 respond(response)
                 // Remove wake word from text and process remaining
@@ -135,9 +195,9 @@ class VoiceAssistantService : Service() {
         }
 
         // Check for stop/sleep commands
-        if (lowerText.matches(Regex(".*(go to sleep|stop listening|shut down|deactivate|goodbye).*"))) {
+        if (lowerText.matches(Regex(".*(go to sleep|stop listening|shut down|deactivate|goodbye|that's all|thank you bye).*"))) {
             isAwake = false
-            val response = "Alright ${prefs.ownerName}, going to sleep. Just say '${prefs.wakeWord}' to wake me up!"
+            val response = "Alright ${prefs.ownerName}, going back to standby. Just say '${prefs.wakeWord}' anytime to wake me up — I'm always here!"
             respond(response)
             return
         }
@@ -202,6 +262,7 @@ class VoiceAssistantService : Service() {
 
     fun announceSms(sender: String, message: String) {
         if (!prefs.announceSms) return
+        wakeUpScreen()
         val announcement = if (message.length > 100) {
             "Hey ${prefs.ownerName}, you got a message from $sender. It says: ${message.take(100)}... Should I read the rest?"
         } else {
@@ -230,12 +291,14 @@ class VoiceAssistantService : Service() {
         )
 
         return NotificationCompat.Builder(this, AdityaAIApp.CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
+            .setContentTitle("${prefs.assistantName} is always listening")
+            .setContentText("Say '${prefs.wakeWord}' anytime — even when locked")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
@@ -243,8 +306,18 @@ class VoiceAssistantService : Service() {
         scope.cancel()
         ttsManager.shutdown()
         speechManager.destroy()
+        releaseWakeLock()
         prefs.isServiceRunning = false
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Restart service if swiped away from recents
+        val restartIntent = Intent(this, VoiceAssistantService::class.java).apply {
+            action = ACTION_START
+        }
+        startForegroundService(restartIntent)
+        super.onTaskRemoved(rootIntent)
     }
 
     companion object {

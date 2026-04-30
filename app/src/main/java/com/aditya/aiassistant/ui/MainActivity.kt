@@ -73,6 +73,22 @@ class MainActivity : AppCompatActivity() {
         setupUI()
         requestPermissions()
         requestBatteryOptimizationExemption()
+
+        // Auto-start the assistant service (always-on like Siri)
+        if (prefs.autoStart && !isServiceActive) {
+            startAssistant()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reconnect to service if it's running
+        if (prefs.isServiceRunning && !isBound) {
+            val serviceIntent = Intent(this, VoiceAssistantService::class.java)
+            bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+            isServiceActive = true
+            updateUIState(true)
+        }
     }
 
     private fun setupUI() {
