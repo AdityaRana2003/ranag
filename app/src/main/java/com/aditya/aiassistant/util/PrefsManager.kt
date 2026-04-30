@@ -32,6 +32,10 @@ class PrefsManager(context: Context) {
         get() = prefs.getFloat(KEY_VOICE_PITCH, 1.3f)
         set(value) = prefs.edit().putFloat(KEY_VOICE_PITCH, value).apply()
 
+    var voiceStyle: String
+        get() = prefs.getString(KEY_VOICE_STYLE, "sweet_girl") ?: "sweet_girl"
+        set(value) = prefs.edit().putString(KEY_VOICE_STYLE, value).apply()
+
     var autoStart: Boolean
         get() = prefs.getBoolean(KEY_AUTO_START, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_START, value).apply()
@@ -60,6 +64,7 @@ class PrefsManager(context: Context) {
         private const val KEY_API_KEY = "api_key"
         private const val KEY_VOICE_SPEED = "voice_speed"
         private const val KEY_VOICE_PITCH = "voice_pitch"
+        private const val KEY_VOICE_STYLE = "voice_style"
         private const val KEY_AUTO_START = "auto_start"
         private const val KEY_ANNOUNCE_CALLS = "announce_calls"
         private const val KEY_ANNOUNCE_SMS = "announce_sms"
