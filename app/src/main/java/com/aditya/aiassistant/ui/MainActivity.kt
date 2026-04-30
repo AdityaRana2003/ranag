@@ -17,6 +17,7 @@ import android.provider.Settings
 import android.text.SpannableStringBuilder
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -256,11 +257,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (neededPermissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(
-                this,
-                neededPermissions.toTypedArray(),
-                PERMISSION_REQUEST_CODE
-            )
+            // Show explanation dialog first
+            AlertDialog.Builder(this)
+                .setTitle("Adi needs permissions")
+                .setMessage("Adi needs access to your microphone, contacts, phone, and SMS to work properly. Please tap 'Allow' for each permission.\n\nIf you accidentally tap 'Deny', you can go to Settings → Apps → Adi AI Assistant → Permissions to enable them.")
+                .setPositiveButton("OK, Let's Go") { _, _ ->
+                    ActivityCompat.requestPermissions(
+                        this,
+                        neededPermissions.toTypedArray(),
+                        PERMISSION_REQUEST_CODE
+                    )
+                }
+                .setCancelable(false)
+                .show()
         } else {
             // All permissions already granted — safe to auto-start
             requestBatteryOptimizationExemption()
@@ -289,16 +298,27 @@ class MainActivity : AppCompatActivity() {
                 grantResults[index] != PackageManager.PERMISSION_GRANTED
             }
             if (denied.isNotEmpty()) {
-                Toast.makeText(
-                    this,
-                    "Some permissions were denied. Adi may not work fully.",
-                    Toast.LENGTH_LONG
-                ).show()
+                // Show dialog with option to open app settings
+                AlertDialog.Builder(this)
+                    .setTitle("Some permissions denied")
+                    .setMessage("Adi needs all permissions to work properly.\n\nDenied: ${denied.joinToString(", ") { it.substringAfterLast(".") }}\n\nYou can enable them in your phone Settings.")
+                    .setPositiveButton("Open Settings") { _, _ ->
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    }
+                    .setNegativeButton("Continue Anyway") { _, _ ->
+                        requestBatteryOptimizationExemption()
+                        autoStartIfReady()
+                    }
+                    .setCancelable(false)
+                    .show()
+            } else {
+                // All granted! Start the assistant
+                requestBatteryOptimizationExemption()
+                autoStartIfReady()
             }
-
-            // Now that permissions are handled, try to auto-start
-            requestBatteryOptimizationExemption()
-            autoStartIfReady()
         }
     }
 
