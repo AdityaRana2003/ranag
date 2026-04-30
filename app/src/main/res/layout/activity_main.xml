@@ -75,7 +75,7 @@
         android:layout_height="wrap_content"
         android:src="@android:drawable/ic_btn_speak_now"
         android:contentDescription="Toggle Assistant"
-        app:fabSize="large"
+        app:fabCustomSize="72dp"
         app:backgroundTint="@color/primary"
         app:tint="@color/white"
         app:layout_constraintTop_toTopOf="@id/pulseOuter"
