@@ -43,6 +43,8 @@ class VoiceAssistantService : Service() {
     private var isAwake = false
     private var conversationCallback: ((String, Boolean) -> Unit)? = null
     private var listeningCallback: ((Boolean) -> Unit)? = null
+    private var speakingCallback: ((Boolean) -> Unit)? = null
+    private var thinkingCallback: ((Boolean) -> Unit)? = null
 
     inner class AssistantBinder : Binder() {
         fun getService(): VoiceAssistantService = this@VoiceAssistantService
@@ -54,12 +56,17 @@ class VoiceAssistantService : Service() {
         super.onCreate()
         prefs = PrefsManager(this)
 
-        ttsManager = TextToSpeechManager(this) {
-            // Resume listening after speaking
-            if (prefs.continuousListening && prefs.isServiceRunning) {
-                speechManager.startListening()
+        ttsManager = TextToSpeechManager(this,
+            onSpeechDone = {
+                speakingCallback?.invoke(false)
+                if (prefs.continuousListening && prefs.isServiceRunning) {
+                    speechManager.startListening()
+                }
+            },
+            onSpeechStart = {
+                speakingCallback?.invoke(true)
             }
-        }
+        )
 
         speechManager = SpeechRecognitionManager(
             context = this,
@@ -101,13 +108,11 @@ class VoiceAssistantService : Service() {
             startForeground(NOTIFICATION_ID, createNotification())
             acquireWakeLock()
             prefs.isServiceRunning = true
-            isAwake = false // Start in wake-word listening mode (like Siri)
+            isAwake = false
 
-            val greeting = "Hey ${prefs.ownerName}! I'm ${prefs.assistantName}, your personal assistant. I'm always listening now. Just say '${prefs.wakeWord}' anytime, even when your phone is locked!"
-            ttsManager.speak(greeting)
-            conversationCallback?.invoke("🤖 ${prefs.assistantName}: $greeting", false)
+            val greeting = aiManager.getTimeAwareGreeting()
+            respond(greeting)
 
-            // Start always-on listening immediately
             speechManager.startListening()
         } catch (e: Exception) {
             Log.e(TAG, "Error starting assistant", e)
@@ -117,8 +122,7 @@ class VoiceAssistantService : Service() {
 
     private fun stopAssistant() {
         val farewell = "Okay ${prefs.ownerName}, going to sleep now. Say ${prefs.wakeWord} whenever you need me!"
-        ttsManager.speak(farewell)
-        conversationCallback?.invoke("🤖 ${prefs.assistantName}: $farewell", false)
+        respond(farewell)
 
         speechManager.stopListening()
         releaseWakeLock()
@@ -160,11 +164,10 @@ class VoiceAssistantService : Service() {
                         or PowerManager.ON_AFTER_RELEASE,
                 "AdityaAI::ScreenWake"
             )
-            screenWakeLock.acquire(10_000L) // Keep screen on for 10 seconds
+            screenWakeLock.acquire(10_000L)
             Log.d(TAG, "Screen woken up")
         }
 
-        // Launch lock screen overlay activity
         showLockScreenOverlay()
     }
 
@@ -183,14 +186,12 @@ class VoiceAssistantService : Service() {
         Log.d(TAG, "Speech result: $text")
         val lowerText = text.lowercase()
 
-        // Always listening for wake word — even when phone is locked
         if (!isAwake) {
             if (lowerText.contains(prefs.wakeWord.lowercase())) {
                 isAwake = true
-                wakeUpScreen() // Wake up the screen when wake word is detected
+                wakeUpScreen()
                 val response = "Yes, ${prefs.ownerName}? I'm listening!"
                 respond(response)
-                // Remove wake word from text and process remaining
                 val remaining = lowerText.replace(prefs.wakeWord.lowercase(), "").trim()
                 if (remaining.isNotEmpty()) {
                     processCommand(remaining)
@@ -199,20 +200,24 @@ class VoiceAssistantService : Service() {
             return
         }
 
-        // Check for stop/sleep commands
         if (lowerText.matches(Regex(".*(go to sleep|stop listening|shut down|deactivate|goodbye|that's all|thank you bye).*"))) {
             isAwake = false
-            val response = "Alright ${prefs.ownerName}, going back to standby. Just say '${prefs.wakeWord}' anytime to wake me up — I'm always here!"
+            val response = "Alright ${prefs.ownerName}, going back to standby. Just say '${prefs.wakeWord}' anytime to wake me up!"
             respond(response)
             return
         }
 
-        conversationCallback?.invoke("🎤 ${prefs.ownerName}: $text", true)
+        conversationCallback?.invoke("${prefs.ownerName}: $text", true)
         processCommand(text)
     }
 
     private fun processCommand(text: String) {
         val command = commandParser.parse(text)
+
+        // Notify thinking state for AI chat commands
+        if (command is Command.AiChat || command is Command.Greet || command is Command.Unknown) {
+            thinkingCallback?.invoke(true)
+        }
 
         scope.launch {
             val response = when (command) {
@@ -245,12 +250,14 @@ class VoiceAssistantService : Service() {
                 is Command.AiChat -> aiManager.chat(command.message)
                 is Command.Unknown -> aiManager.chat(text)
             }
+
+            thinkingCallback?.invoke(false)
             respond(response)
         }
     }
 
     private fun respond(text: String) {
-        conversationCallback?.invoke("🤖 ${prefs.assistantName}: $text", false)
+        conversationCallback?.invoke("${prefs.assistantName}: $text", false)
         ttsManager.speak(text)
     }
 
@@ -259,9 +266,8 @@ class VoiceAssistantService : Service() {
         speechManager.stopListening()
         val announcement = "Hey ${prefs.ownerName}! $callerName is calling you. Would you like me to pick up, or should I cut the call?"
         ttsManager.speak(announcement, flush = true)
-        conversationCallback?.invoke("📞 Incoming call from $callerName", false)
-        conversationCallback?.invoke("🤖 ${prefs.assistantName}: $announcement", false)
-        // Resume listening for answer/reject command
+        conversationCallback?.invoke("Incoming call from $callerName", false)
+        conversationCallback?.invoke("${prefs.assistantName}: $announcement", false)
         isAwake = true
     }
 
@@ -274,8 +280,8 @@ class VoiceAssistantService : Service() {
             "Hey ${prefs.ownerName}, $sender sent you a message saying: $message"
         }
         ttsManager.speak(announcement)
-        conversationCallback?.invoke("💬 Message from $sender: $message", false)
-        conversationCallback?.invoke("🤖 ${prefs.assistantName}: $announcement", false)
+        conversationCallback?.invoke("Message from $sender: $message", false)
+        conversationCallback?.invoke("${prefs.assistantName}: $announcement", false)
     }
 
     fun setConversationCallback(callback: (String, Boolean) -> Unit) {
@@ -284,6 +290,14 @@ class VoiceAssistantService : Service() {
 
     fun setListeningCallback(callback: (Boolean) -> Unit) {
         listeningCallback = callback
+    }
+
+    fun setSpeakingCallback(callback: (Boolean) -> Unit) {
+        speakingCallback = callback
+    }
+
+    fun setThinkingCallback(callback: (Boolean) -> Unit) {
+        thinkingCallback = callback
     }
 
     fun isRunning(): Boolean = prefs.isServiceRunning
@@ -297,7 +311,7 @@ class VoiceAssistantService : Service() {
 
         return NotificationCompat.Builder(this, AdityaAIApp.CHANNEL_ID)
             .setContentTitle("${prefs.assistantName} is always listening")
-            .setContentText("Say '${prefs.wakeWord}' anytime — even when locked")
+            .setContentText("Say '${prefs.wakeWord}' anytime")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -317,7 +331,6 @@ class VoiceAssistantService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Restart service if swiped away from recents
         val restartIntent = Intent(this, VoiceAssistantService::class.java).apply {
             action = ACTION_START
         }

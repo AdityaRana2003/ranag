@@ -2,12 +2,15 @@ package com.aditya.aiassistant.ui
 
 import android.Manifest
 import android.animation.AnimatorSet
+import android.animation.ArgbEvaluator
 import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -15,7 +18,9 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.SpannableStringBuilder
+import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -33,7 +38,15 @@ class MainActivity : AppCompatActivity() {
     private var assistantService: VoiceAssistantService? = null
     private var isBound = false
     private var isServiceActive = false
+
     private var pulseAnimator: AnimatorSet? = null
+    private var ringRotationAnimator: ObjectAnimator? = null
+    private var glowAnimator: AnimatorSet? = null
+    private var waveAnimators: MutableList<ObjectAnimator> = mutableListOf()
+    private var colorCycleAnimator: ValueAnimator? = null
+
+    private enum class AssistantState { IDLE, LISTENING, THINKING, SPEAKING }
+    private var currentState = AssistantState.IDLE
 
     private val conversationLog = SpannableStringBuilder()
 
@@ -52,8 +65,25 @@ class MainActivity : AppCompatActivity() {
             assistantService?.setListeningCallback { isListening ->
                 runOnUiThread {
                     if (isListening) {
-                        binding.tvStatus.text = getString(R.string.status_active)
-                        startPulseAnimation()
+                        setAnimationState(AssistantState.LISTENING)
+                    }
+                }
+            }
+
+            assistantService?.setSpeakingCallback { isSpeaking ->
+                runOnUiThread {
+                    if (isSpeaking) {
+                        setAnimationState(AssistantState.SPEAKING)
+                    } else if (isServiceActive) {
+                        setAnimationState(AssistantState.LISTENING)
+                    }
+                }
+            }
+
+            assistantService?.setThinkingCallback { isThinking ->
+                runOnUiThread {
+                    if (isThinking) {
+                        setAnimationState(AssistantState.THINKING)
                     }
                 }
             }
@@ -77,7 +107,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Reconnect to service if it's running
         if (prefs.isServiceRunning && !isBound) {
             val serviceIntent = Intent(this, VoiceAssistantService::class.java)
             bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
@@ -101,14 +130,13 @@ class MainActivity : AppCompatActivity() {
 
         binding.chipCall.setOnClickListener {
             if (isServiceActive) {
-                appendToConversation("🎤 ${prefs.ownerName}: Call")
-                // Service will handle the rest
+                appendToConversation("${prefs.ownerName}: Call")
             }
         }
 
         binding.chipMessage.setOnClickListener {
             if (isServiceActive) {
-                appendToConversation("🎤 ${prefs.ownerName}: Send a message")
+                appendToConversation("${prefs.ownerName}: Send a message")
             }
         }
 
@@ -120,11 +148,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.chipAlarm.setOnClickListener {
             if (isServiceActive) {
-                appendToConversation("🎤 ${prefs.ownerName}: Set an alarm")
+                appendToConversation("${prefs.ownerName}: Set an alarm")
             }
         }
 
-        // Initial state
         updateUIState(false)
     }
 
@@ -169,7 +196,7 @@ class MainActivity : AppCompatActivity() {
 
         isServiceActive = false
         updateUIState(false)
-        stopPulseAnimation()
+        stopAllAnimations()
     }
 
     private fun updateUIState(active: Boolean) {
@@ -177,57 +204,299 @@ class MainActivity : AppCompatActivity() {
             binding.tvStatus.text = getString(R.string.status_active)
             binding.tvStatus.setTextColor(ContextCompat.getColor(this, R.color.green_active))
             binding.fabMic.backgroundTintList = ContextCompat.getColorStateList(this, R.color.green_active)
-            startPulseAnimation()
+            setAnimationState(AssistantState.LISTENING)
         } else {
             binding.tvStatus.text = getString(R.string.status_inactive)
             binding.tvStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
             binding.fabMic.backgroundTintList = ContextCompat.getColorStateList(this, R.color.primary)
-            stopPulseAnimation()
+            setAnimationState(AssistantState.IDLE)
         }
     }
 
-    private fun startPulseAnimation() {
-        stopPulseAnimation()
+    // ========================
+    // SIRI-LIKE ANIMATION SYSTEM
+    // ========================
 
-        val scaleXOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleX", 1f, 1.3f, 1f)
-        val scaleYOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleY", 1f, 1.3f, 1f)
-        val alphaOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "alpha", 0.3f, 0.1f, 0.3f)
+    private fun setAnimationState(state: AssistantState) {
+        if (currentState == state) return
+        currentState = state
 
-        val scaleXInner = ObjectAnimator.ofFloat(binding.pulseInner, "scaleX", 1f, 1.15f, 1f)
-        val scaleYInner = ObjectAnimator.ofFloat(binding.pulseInner, "scaleY", 1f, 1.15f, 1f)
-        val alphaInner = ObjectAnimator.ofFloat(binding.pulseInner, "alpha", 0.5f, 0.2f, 0.5f)
+        stopAllAnimations()
+
+        when (state) {
+            AssistantState.IDLE -> showIdleState()
+            AssistantState.LISTENING -> showListeningState()
+            AssistantState.THINKING -> showThinkingState()
+            AssistantState.SPEAKING -> showSpeakingState()
+        }
+    }
+
+    private fun showIdleState() {
+        binding.siriGlow.alpha = 0f
+        binding.siriRing.alpha = 0f
+        binding.waveContainer.alpha = 0f
+        binding.tvStateLabel.alpha = 0f
+        binding.pulseOuter.alpha = 0.3f
+        binding.pulseInner.alpha = 0.5f
+
+        // Gentle idle pulse
+        val scaleXOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleX", 1f, 1.05f, 1f)
+        val scaleYOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleY", 1f, 1.05f, 1f)
 
         pulseAnimator = AnimatorSet().apply {
-            playTogether(scaleXOuter, scaleYOuter, alphaOuter, scaleXInner, scaleYInner, alphaInner)
-            duration = 1500
+            playTogether(scaleXOuter, scaleYOuter)
+            duration = 3000
             interpolator = AccelerateDecelerateInterpolator()
             addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
-                    if (isServiceActive) {
-                        start()
-                    }
+                    if (currentState == AssistantState.IDLE) start()
                 }
             })
             start()
         }
     }
 
-    private fun stopPulseAnimation() {
+    private fun showListeningState() {
+        // Show state label
+        binding.tvStateLabel.text = "Listening..."
+        binding.tvStateLabel.setTextColor(ContextCompat.getColor(this, R.color.siri_blue))
+        binding.tvStateLabel.animate().alpha(1f).setDuration(300).start()
+
+        // Show glow
+        binding.siriGlow.animate().alpha(0.6f).setDuration(500).start()
+
+        // Show and rotate the ring
+        binding.siriRing.animate().alpha(0.8f).setDuration(500).start()
+        ringRotationAnimator = ObjectAnimator.ofFloat(binding.siriRing, "rotation", 0f, 360f).apply {
+            duration = 3000
+            repeatCount = ObjectAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            start()
+        }
+
+        // Pulsing circles with Siri colors
+        val pulseOuterColor = ContextCompat.getColor(this, R.color.siri_blue)
+        (binding.pulseOuter.background as? GradientDrawable)?.setColor(pulseOuterColor)
+        (binding.pulseInner.background as? GradientDrawable)?.setColor(pulseOuterColor)
+
+        val scaleXOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleX", 1f, 1.25f, 1f)
+        val scaleYOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleY", 1f, 1.25f, 1f)
+        val alphaOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "alpha", 0.4f, 0.15f, 0.4f)
+
+        val scaleXInner = ObjectAnimator.ofFloat(binding.pulseInner, "scaleX", 1f, 1.15f, 1f)
+        val scaleYInner = ObjectAnimator.ofFloat(binding.pulseInner, "scaleY", 1f, 1.15f, 1f)
+        val alphaInner = ObjectAnimator.ofFloat(binding.pulseInner, "alpha", 0.6f, 0.25f, 0.6f)
+
+        pulseAnimator = AnimatorSet().apply {
+            playTogether(scaleXOuter, scaleYOuter, alphaOuter, scaleXInner, scaleYInner, alphaInner)
+            duration = 1200
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (currentState == AssistantState.LISTENING) start()
+                }
+            })
+            start()
+        }
+
+        // Show wave bars
+        binding.waveContainer.animate().alpha(1f).setDuration(400).start()
+        startWaveAnimation()
+
+        // Color cycling on the glow
+        startColorCycle()
+    }
+
+    private fun showThinkingState() {
+        // State label
+        binding.tvStateLabel.text = "Thinking..."
+        binding.tvStateLabel.setTextColor(ContextCompat.getColor(this, R.color.siri_orange))
+        binding.tvStateLabel.animate().alpha(1f).setDuration(300).start()
+
+        // Glow
+        binding.siriGlow.animate().alpha(0.4f).setDuration(300).start()
+
+        // Hide wave bars
+        binding.waveContainer.animate().alpha(0f).setDuration(200).start()
+
+        // Ring spins faster when thinking
+        binding.siriRing.animate().alpha(1f).setDuration(300).start()
+        ringRotationAnimator = ObjectAnimator.ofFloat(binding.siriRing, "rotation", 0f, 360f).apply {
+            duration = 1000
+            repeatCount = ObjectAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            start()
+        }
+
+        // Orange pulsing circles
+        val orangeColor = ContextCompat.getColor(this, R.color.siri_orange)
+        (binding.pulseOuter.background as? GradientDrawable)?.setColor(orangeColor)
+        (binding.pulseInner.background as? GradientDrawable)?.setColor(orangeColor)
+
+        val scaleXOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleX", 1f, 1.1f, 0.95f, 1f)
+        val scaleYOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleY", 1f, 1.1f, 0.95f, 1f)
+        val alphaOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "alpha", 0.3f, 0.5f, 0.2f, 0.3f)
+
+        pulseAnimator = AnimatorSet().apply {
+            playTogether(scaleXOuter, scaleYOuter, alphaOuter)
+            duration = 800
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (currentState == AssistantState.THINKING) start()
+                }
+            })
+            start()
+        }
+    }
+
+    private fun showSpeakingState() {
+        // State label
+        binding.tvStateLabel.text = "Speaking..."
+        binding.tvStateLabel.setTextColor(ContextCompat.getColor(this, R.color.siri_green))
+        binding.tvStateLabel.animate().alpha(1f).setDuration(300).start()
+
+        // Glow
+        binding.siriGlow.animate().alpha(0.5f).setDuration(300).start()
+
+        // Show wave bars for speech visualization
+        binding.waveContainer.animate().alpha(1f).setDuration(300).start()
+        startSpeakingWaveAnimation()
+
+        // Ring rotates slowly
+        binding.siriRing.animate().alpha(0.6f).setDuration(300).start()
+        ringRotationAnimator = ObjectAnimator.ofFloat(binding.siriRing, "rotation", 0f, 360f).apply {
+            duration = 5000
+            repeatCount = ObjectAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            start()
+        }
+
+        // Green pulsing
+        val greenColor = ContextCompat.getColor(this, R.color.siri_green)
+        (binding.pulseOuter.background as? GradientDrawable)?.setColor(greenColor)
+        (binding.pulseInner.background as? GradientDrawable)?.setColor(greenColor)
+
+        val scaleXOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleX", 1f, 1.15f, 1f)
+        val scaleYOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "scaleY", 1f, 1.15f, 1f)
+        val alphaOuter = ObjectAnimator.ofFloat(binding.pulseOuter, "alpha", 0.3f, 0.5f, 0.3f)
+
+        pulseAnimator = AnimatorSet().apply {
+            playTogether(scaleXOuter, scaleYOuter, alphaOuter)
+            duration = 1500
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (currentState == AssistantState.SPEAKING) start()
+                }
+            })
+            start()
+        }
+    }
+
+    private fun startWaveAnimation() {
+        val bars = listOf(
+            binding.waveBar1, binding.waveBar2, binding.waveBar3,
+            binding.waveBar4, binding.waveBar5
+        )
+
+        val heights = listOf(20f, 40f, 55f, 40f, 20f)
+        val delays = listOf(0L, 100L, 200L, 100L, 0L)
+
+        bars.forEachIndexed { index, bar ->
+            val minH = dpToPx(10f)
+            val maxH = dpToPx(heights[index])
+
+            val anim = ObjectAnimator.ofFloat(bar, "scaleY", 1f, maxH / minH, 0.5f, 1f).apply {
+                duration = 600
+                startDelay = delays[index]
+                repeatCount = ObjectAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+                start()
+            }
+            waveAnimators.add(anim)
+        }
+    }
+
+    private fun startSpeakingWaveAnimation() {
+        val bars = listOf(
+            binding.waveBar1, binding.waveBar2, binding.waveBar3,
+            binding.waveBar4, binding.waveBar5
+        )
+
+        bars.forEachIndexed { index, bar ->
+            val anim = ObjectAnimator.ofFloat(bar, "scaleY", 0.3f, 1.5f, 0.6f, 1.2f, 0.3f).apply {
+                duration = 800 + (index * 50L)
+                startDelay = index * 80L
+                repeatCount = ObjectAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+                start()
+            }
+            waveAnimators.add(anim)
+        }
+    }
+
+    private fun startColorCycle() {
+        val blue = ContextCompat.getColor(this, R.color.siri_blue)
+        val purple = ContextCompat.getColor(this, R.color.siri_purple)
+        val pink = ContextCompat.getColor(this, R.color.siri_pink)
+        val cyan = ContextCompat.getColor(this, R.color.siri_cyan)
+
+        colorCycleAnimator = ValueAnimator.ofObject(ArgbEvaluator(), blue, purple, pink, cyan, blue).apply {
+            duration = 4000
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { animator ->
+                val color = animator.animatedValue as Int
+                binding.tvStateLabel.setTextColor(color)
+            }
+            start()
+        }
+    }
+
+    private fun stopAllAnimations() {
         pulseAnimator?.cancel()
         pulseAnimator = null
+        ringRotationAnimator?.cancel()
+        ringRotationAnimator = null
+        glowAnimator?.cancel()
+        glowAnimator = null
+        colorCycleAnimator?.cancel()
+        colorCycleAnimator = null
+        waveAnimators.forEach { it.cancel() }
+        waveAnimators.clear()
+
+        // Reset views
         binding.pulseOuter.scaleX = 1f
         binding.pulseOuter.scaleY = 1f
         binding.pulseOuter.alpha = 0.3f
         binding.pulseInner.scaleX = 1f
         binding.pulseInner.scaleY = 1f
         binding.pulseInner.alpha = 0.5f
+
+        // Reset pulse colors
+        val defaultColor = ContextCompat.getColor(this, R.color.pulse_color)
+        (binding.pulseOuter.background as? GradientDrawable)?.setColor(defaultColor)
+        (binding.pulseInner.background as? GradientDrawable)?.setColor(defaultColor)
+
+        // Reset wave bars
+        listOf(binding.waveBar1, binding.waveBar2, binding.waveBar3, binding.waveBar4, binding.waveBar5).forEach {
+            it.scaleY = 1f
+        }
     }
+
+    private fun dpToPx(dp: Float): Float {
+        return dp * resources.displayMetrics.density
+    }
+
+    // ========================
+    // CONVERSATION & PERMISSIONS
+    // ========================
 
     private fun appendToConversation(text: String) {
         conversationLog.append(text).append("\n\n")
         binding.tvConversation.text = conversationLog
         binding.scrollConversation.post {
-            binding.scrollConversation.fullScroll(android.view.View.FOCUS_DOWN)
+            binding.scrollConversation.fullScroll(View.FOCUS_DOWN)
         }
     }
 
@@ -257,10 +526,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (neededPermissions.isNotEmpty()) {
-            // Show explanation dialog first
             AlertDialog.Builder(this)
                 .setTitle("Adi needs permissions")
-                .setMessage("Adi needs access to your microphone, contacts, phone, and SMS to work properly. Please tap 'Allow' for each permission.\n\nIf you accidentally tap 'Deny', you can go to Settings → Apps → Adi AI Assistant → Permissions to enable them.")
+                .setMessage("Adi needs access to your microphone, contacts, phone, and SMS to work properly. Please tap 'Allow' for each permission.\n\nIf you accidentally tap 'Deny', you can go to Settings > Apps > Adi AI Assistant > Permissions to enable them.")
                 .setPositiveButton("OK, Let's Go") { _, _ ->
                     ActivityCompat.requestPermissions(
                         this,
@@ -271,7 +539,6 @@ class MainActivity : AppCompatActivity() {
                 .setCancelable(false)
                 .show()
         } else {
-            // All permissions already granted — safe to auto-start
             requestBatteryOptimizationExemption()
             autoStartIfReady()
         }
@@ -298,7 +565,6 @@ class MainActivity : AppCompatActivity() {
                 grantResults[index] != PackageManager.PERMISSION_GRANTED
             }
             if (denied.isNotEmpty()) {
-                // Show dialog with option to open app settings
                 AlertDialog.Builder(this)
                     .setTitle("Some permissions denied")
                     .setMessage("Adi needs all permissions to work properly.\n\nDenied: ${denied.joinToString(", ") { it.substringAfterLast(".") }}\n\nYou can enable them in your phone Settings.")
@@ -315,7 +581,6 @@ class MainActivity : AppCompatActivity() {
                     .setCancelable(false)
                     .show()
             } else {
-                // All granted! Start the assistant
                 requestBatteryOptimizationExemption()
                 autoStartIfReady()
             }
@@ -326,7 +591,7 @@ class MainActivity : AppCompatActivity() {
         if (isBound) {
             unbindService(serviceConnection)
         }
-        stopPulseAnimation()
+        stopAllAnimations()
         super.onDestroy()
     }
 

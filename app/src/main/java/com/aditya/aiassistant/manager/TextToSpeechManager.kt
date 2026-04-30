@@ -3,7 +3,6 @@ package com.aditya.aiassistant.manager
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.speech.tts.Voice
 import android.util.Log
 import com.aditya.aiassistant.util.PrefsManager
 import java.util.Locale
@@ -11,7 +10,8 @@ import java.util.UUID
 
 class TextToSpeechManager(
     private val context: Context,
-    private val onSpeechDone: (() -> Unit)? = null
+    private val onSpeechDone: (() -> Unit)? = null,
+    private val onSpeechStart: (() -> Unit)? = null
 ) {
     private var tts: TextToSpeech? = null
     private var isReady = false
@@ -84,7 +84,9 @@ class TextToSpeechManager(
         }
 
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
+            override fun onStart(utteranceId: String?) {
+                onSpeechStart?.invoke()
+            }
             override fun onDone(utteranceId: String?) {
                 onSpeechDone?.invoke()
             }

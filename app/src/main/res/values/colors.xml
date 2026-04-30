@@ -13,4 +13,19 @@
     <color name="white">#FFFFFF</color>
     <color name="ripple_color">#33FFFFFF</color>
     <color name="pulse_color">#FF6C63</color>
+
+    <!-- Siri-like animation colors -->
+    <color name="siri_blue">#4FC3F7</color>
+    <color name="siri_purple">#7C4DFF</color>
+    <color name="siri_pink">#FF4081</color>
+    <color name="siri_green">#69F0AE</color>
+    <color name="siri_orange">#FFAB40</color>
+    <color name="siri_cyan">#00BCD4</color>
+    <color name="siri_glow">#667C4DFF</color>
+
+    <!-- State colors -->
+    <color name="state_listening">#4FC3F7</color>
+    <color name="state_thinking">#FFAB40</color>
+    <color name="state_speaking">#69F0AE</color>
+    <color name="state_idle">#7C4DFF</color>
 </resources>

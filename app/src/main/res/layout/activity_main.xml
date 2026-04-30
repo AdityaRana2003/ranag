@@ -49,18 +49,44 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="16dp" />
 
-    <!-- Pulse Animation Circle -->
+    <!-- Siri-like Glow Background -->
+    <View
+        android:id="@+id/siriGlow"
+        android:layout_width="280dp"
+        android:layout_height="280dp"
+        android:background="@drawable/siri_glow_circle"
+        android:alpha="0"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.35" />
+
+    <!-- Siri Rotating Ring -->
+    <View
+        android:id="@+id/siriRing"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:background="@drawable/siri_gradient_ring"
+        android:alpha="0"
+        app:layout_constraintTop_toTopOf="@id/siriGlow"
+        app:layout_constraintBottom_toBottomOf="@id/siriGlow"
+        app:layout_constraintStart_toStartOf="@id/siriGlow"
+        app:layout_constraintEnd_toEndOf="@id/siriGlow" />
+
+    <!-- Pulse Outer Circle -->
     <View
         android:id="@+id/pulseOuter"
         android:layout_width="220dp"
         android:layout_height="220dp"
         android:background="@drawable/circle_pulse_outer"
         android:alpha="0.3"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintTop_toTopOf="@id/siriGlow"
+        app:layout_constraintBottom_toBottomOf="@id/siriGlow"
+        app:layout_constraintStart_toStartOf="@id/siriGlow"
+        app:layout_constraintEnd_toEndOf="@id/siriGlow" />
 
+    <!-- Pulse Inner Circle -->
     <View
         android:id="@+id/pulseInner"
         android:layout_width="180dp"
@@ -71,6 +97,54 @@
         app:layout_constraintBottom_toBottomOf="@id/pulseOuter"
         app:layout_constraintStart_toStartOf="@id/pulseOuter"
         app:layout_constraintEnd_toEndOf="@id/pulseOuter" />
+
+    <!-- Sound Wave Bars (5 bars like Siri's wave) -->
+    <LinearLayout
+        android:id="@+id/waveContainer"
+        android:layout_width="160dp"
+        android:layout_height="60dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:alpha="0"
+        app:layout_constraintTop_toTopOf="@id/pulseOuter"
+        app:layout_constraintBottom_toBottomOf="@id/pulseOuter"
+        app:layout_constraintStart_toStartOf="@id/pulseOuter"
+        app:layout_constraintEnd_toEndOf="@id/pulseOuter">
+
+        <View
+            android:id="@+id/waveBar1"
+            android:layout_width="6dp"
+            android:layout_height="20dp"
+            android:background="@drawable/siri_wave_bar"
+            android:layout_marginEnd="6dp" />
+
+        <View
+            android:id="@+id/waveBar2"
+            android:layout_width="6dp"
+            android:layout_height="30dp"
+            android:background="@drawable/siri_wave_bar"
+            android:layout_marginEnd="6dp" />
+
+        <View
+            android:id="@+id/waveBar3"
+            android:layout_width="6dp"
+            android:layout_height="40dp"
+            android:background="@drawable/siri_wave_bar"
+            android:layout_marginEnd="6dp" />
+
+        <View
+            android:id="@+id/waveBar4"
+            android:layout_width="6dp"
+            android:layout_height="30dp"
+            android:background="@drawable/siri_wave_bar"
+            android:layout_marginEnd="6dp" />
+
+        <View
+            android:id="@+id/waveBar5"
+            android:layout_width="6dp"
+            android:layout_height="20dp"
+            android:background="@drawable/siri_wave_bar" />
+    </LinearLayout>
 
     <!-- Main Mic Button -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -87,6 +161,21 @@
         app:layout_constraintStart_toStartOf="@id/pulseOuter"
         app:layout_constraintEnd_toEndOf="@id/pulseOuter" />
 
+    <!-- State Label (Listening / Thinking / Speaking) -->
+    <TextView
+        android:id="@+id/tvStateLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@color/siri_blue"
+        android:textSize="13sp"
+        android:textStyle="italic"
+        android:alpha="0"
+        app:layout_constraintTop_toBottomOf="@id/pulseOuter"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="8dp" />
+
     <!-- Status Text -->
     <TextView
         android:id="@+id/tvStatus"
@@ -96,10 +185,10 @@
         android:textColor="@color/text_secondary"
         android:textSize="16sp"
         android:textAlignment="center"
-        app:layout_constraintTop_toBottomOf="@id/pulseOuter"
+        app:layout_constraintTop_toBottomOf="@id/tvStateLabel"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="24dp" />
+        android:layout_marginTop="8dp" />
 
     <!-- Conversation Log -->
     <androidx.cardview.widget.CardView
@@ -113,7 +202,7 @@
         app:layout_constraintBottom_toTopOf="@id/layoutQuickActions"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="12dp"
         android:layout_marginBottom="16dp">
 
         <ScrollView
@@ -130,7 +219,7 @@
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
                 android:lineSpacingExtra="4dp"
-                android:text="Tap the mic to start talking to Adi…" />
+                android:text="Tap the mic to start talking to Adi..." />
         </ScrollView>
     </androidx.cardview.widget.CardView>
 
@@ -150,7 +239,7 @@
             android:id="@+id/chipCall"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="📞 Call"
+            android:text="Call"
             android:textColor="@color/text_primary"
             app:chipBackgroundColor="@color/card_dark"
             android:layout_marginEnd="8dp" />
@@ -159,7 +248,7 @@
             android:id="@+id/chipMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="💬 Message"
+            android:text="Message"
             android:textColor="@color/text_primary"
             app:chipBackgroundColor="@color/card_dark"
             android:layout_marginEnd="8dp" />
@@ -168,7 +257,7 @@
             android:id="@+id/chipFlash"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="🔦 Flash"
+            android:text="Flash"
             android:textColor="@color/text_primary"
             app:chipBackgroundColor="@color/card_dark"
             android:layout_marginEnd="8dp" />
@@ -177,7 +266,7 @@
             android:id="@+id/chipAlarm"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="⏰ Alarm"
+            android:text="Alarm"
             android:textColor="@color/text_primary"
             app:chipBackgroundColor="@color/card_dark" />
     </LinearLayout>
