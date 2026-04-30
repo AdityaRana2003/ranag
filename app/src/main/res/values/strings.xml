@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aditya AI Assistant</string>
+    <string name="assistant_name">Adi</string>
+    <string name="accessibility_description">Aditya AI Assistant needs accessibility access to control your phone, open apps, navigate screens, and perform actions on your behalf through voice commands.</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_id">aditya_ai_channel</string>
+    <string name="notification_channel_name">AI Assistant</string>
+    <string name="notification_title">Adi is listening…</string>
+    <string name="notification_text">Your AI assistant is active and ready for commands</string>
+
+    <!-- UI Strings -->
+    <string name="btn_start">Start Adi</string>
+    <string name="btn_stop">Stop Adi</string>
+    <string name="status_active">🎙️ Adi is active and listening</string>
+    <string name="status_inactive">Adi is sleeping. Tap to wake up!</string>
+    <string name="greeting">Hey Aditya! I\'m Adi, your personal AI assistant. How can I help you today?</string>
+    <string name="settings_title">Settings</string>
+    <string name="wake_word_label">Wake Word</string>
+    <string name="wake_word_default">hey adi</string>
+    <string name="api_key_label">OpenAI API Key</string>
+    <string name="api_key_hint">Enter your API key for smart conversations</string>
+    <string name="voice_speed_label">Voice Speed</string>
+    <string name="voice_pitch_label">Voice Pitch</string>
+    <string name="assistant_name_label">Assistant Name</string>
+    <string name="owner_name_label">Your Name</string>
+    <string name="owner_name_default">Aditya</string>
+    <string name="auto_start_label">Start on boot</string>
+    <string name="announce_calls_label">Announce incoming calls</string>
+    <string name="announce_sms_label">Read incoming messages</string>
+    <string name="continuous_listening_label">Continuous listening mode</string>
+</resources>
